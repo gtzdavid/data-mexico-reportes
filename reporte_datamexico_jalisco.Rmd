@@ -1,0 +1,803 @@
+---
+title: "Comercio exterior de Jalisco"
+subtitle: "Comparación estatal y nacional"
+author: "David Gutiérrez"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+lang: es
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r configuracion, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+
+paquetes <- c(
+  "here",
+  "readr",
+  "dplyr",
+  "tidyr",
+  "tibble",
+  "scales",
+  "flextable",
+  "officer",
+  "knitr"
+)
+
+faltantes <- paquetes[
+  !vapply(
+    paquetes,
+    requireNamespace,
+    logical(1),
+    quietly = TRUE
+  )
+]
+
+if (length(faltantes) > 0) {
+  stop(
+    paste(
+      "Faltan paquetes:",
+      paste(faltantes, collapse = ", "),
+      "\nEjecuta primero 00_configuracion.R"
+    )
+  )
+}
+
+# ------------------------------------------------------------
+# Función para leer archivos procesados
+# ------------------------------------------------------------
+
+leer_procesado <- function(nombre_archivo) {
+
+  ruta <- here::here(
+    "data",
+    "processed",
+    nombre_archivo
+  )
+
+  if (!file.exists(ruta)) {
+    stop(
+      paste(
+        "No se encontró:",
+        nombre_archivo,
+        "\nEjecuta nuevamente los scripts anteriores."
+      )
+    )
+  }
+
+  readr::read_csv(
+    ruta,
+    show_col_types = FALSE,
+    progress = FALSE
+  )
+}
+
+# ------------------------------------------------------------
+# Leer bases y tablas
+# ------------------------------------------------------------
+
+indicadores <- leer_procesado(
+  "indicadores_comercio.csv"
+) |>
+  dplyr::mutate(
+    fecha = as.Date(.data$fecha)
+  )
+
+balances <- leer_procesado(
+  "balance_comercial.csv"
+) |>
+  dplyr::mutate(
+    fecha = as.Date(.data$fecha)
+  )
+
+participaciones <- leer_procesado(
+  "participacion_jalisco.csv"
+) |>
+  dplyr::mutate(
+    fecha = as.Date(.data$fecha)
+  )
+
+tabla_comparacion <- leer_procesado(
+  "tabla_comparacion.csv"
+)
+
+tabla_variaciones <- leer_procesado(
+  "tabla_variaciones.csv"
+)
+
+tabla_ultimos_meses <- leer_procesado(
+  "tabla_ultimos_meses.csv"
+)
+
+tabla_anual <- leer_procesado(
+  "tabla_anual.csv"
+)
+
+textos_dinamicos <- leer_procesado(
+  "textos_dinamicos.csv"
+)
+
+# ------------------------------------------------------------
+# Identificar periodo más reciente completo
+# ------------------------------------------------------------
+
+periodos_completos <- indicadores |>
+  dplyr::filter(!is.na(.data$monto_usd)) |>
+  dplyr::distinct(
+    .data$fecha,
+    .data$territorio,
+    .data$flujo
+  ) |>
+  dplyr::count(
+    .data$fecha,
+    name = "combinaciones"
+  ) |>
+  dplyr::filter(.data$combinaciones == 4)
+
+if (nrow(periodos_completos) == 0) {
+  stop("No existe un periodo completo para elaborar el reporte.")
+}
+
+periodo_reporte <- max(periodos_completos$fecha)
+
+# ------------------------------------------------------------
+# Funciones de formato
+# ------------------------------------------------------------
+
+meses_es <- c(
+  "enero", "febrero", "marzo", "abril",
+  "mayo", "junio", "julio", "agosto",
+  "septiembre", "octubre", "noviembre",
+  "diciembre"
+)
+
+nombre_periodo <- function(fecha) {
+  fecha <- as.Date(fecha)
+
+  paste(
+    meses_es[as.integer(format(fecha, "%m"))],
+    "de",
+    format(fecha, "%Y")
+  )
+}
+
+formato_numero <- function(valor, digitos = 1) {
+  ifelse(
+    is.na(valor),
+    "N/D",
+    scales::number(
+      valor,
+      accuracy = 10^(-digitos),
+      big.mark = ",",
+      decimal.mark = "."
+    )
+  )
+}
+
+formato_porcentaje <- function(valor) {
+  ifelse(
+    is.na(valor),
+    "N/D",
+    paste0(
+      scales::number(
+        valor,
+        accuracy = 0.1,
+        decimal.mark = "."
+      ),
+      "%"
+    )
+  )
+}
+
+obtener_texto <- function(seccion_buscada) {
+
+  resultado <- textos_dinamicos |>
+    dplyr::filter(
+      .data$seccion == .env$seccion_buscada
+    )
+
+  if (nrow(resultado) != 1) {
+    return(
+      paste(
+        "No se encontró el texto:",
+        seccion_buscada
+      )
+    )
+  }
+
+  resultado$texto[[1]]
+}
+
+# ------------------------------------------------------------
+# Diseño profesional de tablas
+# ------------------------------------------------------------
+
+crear_tabla_reporte <- function(
+  datos,
+  titulo,
+  tamano = 9,
+  primera_columna_izquierda = TRUE
+) {
+
+  tabla <- flextable::flextable(datos) |>
+    flextable::theme_vanilla() |>
+    flextable::bg(
+      part = "header",
+      bg = "#981B3F"
+    ) |>
+    flextable::color(
+      part = "header",
+      color = "#FFFFFF"
+    ) |>
+    flextable::bold(
+      part = "header",
+      bold = TRUE
+    ) |>
+    flextable::font(
+      fontname = "Arial",
+      part = "all"
+    ) |>
+    flextable::fontsize(
+      size = tamano,
+      part = "all"
+    ) |>
+    flextable::align(
+      align = "center",
+      part = "all"
+    ) |>
+    flextable::valign(
+      valign = "center",
+      part = "all"
+    ) |>
+    flextable::padding(
+      padding = 4,
+      part = "all"
+    ) |>
+    flextable::autofit() |>
+    flextable::set_table_properties(
+      layout = "autofit",
+      width = 1
+    ) |>
+    flextable::set_caption(
+      caption = titulo
+    )
+
+  if (primera_columna_izquierda) {
+    tabla <- tabla |>
+      flextable::align(
+        j = 1,
+        align = "left",
+        part = "all"
+      )
+  }
+
+  if (nrow(datos) >= 2) {
+    filas_pares <- seq(
+      from = 2,
+      to = nrow(datos),
+      by = 2
+    )
+
+    tabla <- tabla |>
+      flextable::bg(
+        i = filas_pares,
+        bg = "#F2F2F2",
+        part = "body"
+      )
+  }
+
+  tabla
+}
+
+# ------------------------------------------------------------
+# Ficha técnica
+# ------------------------------------------------------------
+
+fecha_inicial <- min(
+  indicadores$fecha[!is.na(indicadores$monto_usd)]
+)
+
+fecha_final <- max(
+  indicadores$fecha[!is.na(indicadores$monto_usd)]
+)
+
+observaciones_validas <- sum(
+  !is.na(indicadores$monto_usd)
+)
+
+tabla_ficha <- tibble::tibble(
+  Concepto = c(
+    "Fuente",
+    "Institución responsable",
+    "Territorios",
+    "Periodicidad",
+    "Cobertura",
+    "Flujos analizados",
+    "Unidad monetaria",
+    "Medida",
+    "Nivel de producto",
+    "Último periodo comparable",
+    "Observaciones válidas"
+  ),
+
+  Detalle = c(
+    "DataMéxico",
+    "Secretaría de Economía",
+    "México y Jalisco",
+    "Mensual",
+    paste(
+      nombre_periodo(fecha_inicial),
+      "a",
+      nombre_periodo(fecha_final)
+    ),
+    "Exportaciones e importaciones",
+    "Dólares estadounidenses (US$)",
+    "Trade Value",
+    "Nivel 2",
+    nombre_periodo(periodo_reporte),
+    formato_numero(
+      observaciones_validas,
+      digitos = 0
+    )
+  )
+)
+
+# ------------------------------------------------------------
+# Información de las consultas
+# ------------------------------------------------------------
+
+tabla_consultas <- tibble::tibble(
+  Territorio = c(
+    "México",
+    "Jalisco"
+  ),
+
+  Identificador = c(
+    "Nation = mex",
+    "State = 14"
+  ),
+
+  Cubo = c(
+    "economy_foreign_trade_nat",
+    "economy_foreign_trade_ent"
+  ),
+
+  Desagregación = c(
+    "Month, Flow",
+    "Month, Flow"
+  ),
+
+  Medida = c(
+    "Trade Value",
+    "Trade Value"
+  )
+)
+
+# ------------------------------------------------------------
+# Resumen de calidad
+# ------------------------------------------------------------
+
+tabla_calidad <- indicadores |>
+  dplyr::group_by(.data$territorio) |>
+  dplyr::summarise(
+    `Fecha inicial` = min(
+      .data$fecha[!is.na(.data$monto_usd)]
+    ),
+
+    `Fecha final` = max(
+      .data$fecha[!is.na(.data$monto_usd)]
+    ),
+
+    `Meses con información` = dplyr::n_distinct(
+      .data$fecha[!is.na(.data$monto_usd)]
+    ),
+
+    `Valores faltantes` = sum(
+      is.na(.data$monto_usd)
+    ),
+
+    `Registros duplicados` = sum(
+      duplicated(
+        paste(
+          .data$fecha,
+          .data$flujo
+        )
+      )
+    ),
+
+    .groups = "drop"
+  ) |>
+  dplyr::mutate(
+    `Fecha inicial` = format(
+      .data$`Fecha inicial`,
+      "%Y-%m"
+    ),
+
+    `Fecha final` = format(
+      .data$`Fecha final`,
+      "%Y-%m"
+    )
+  ) |>
+  dplyr::rename(
+    Territorio = territorio
+  )
+
+# ------------------------------------------------------------
+# Preparar tabla comparativa
+# ------------------------------------------------------------
+
+tabla_comparacion_reporte <- tabla_comparacion |>
+  dplyr::transmute(
+    Indicador = .data$indicador,
+
+    `México (millones de US$)` =
+      formato_numero(
+        .data$mexico_millones_usd
+      ),
+
+    `Jalisco (millones de US$)` =
+      formato_numero(
+        .data$jalisco_millones_usd
+      ),
+
+    `Participación de Jalisco` =
+      formato_porcentaje(
+        .data$participacion_jalisco_pct
+      )
+  )
+
+# ------------------------------------------------------------
+# Preparar variaciones mensuales
+# ------------------------------------------------------------
+
+tabla_variacion_mensual <- tabla_variaciones |>
+  dplyr::transmute(
+    Territorio = .data$territorio,
+    Flujo = .data$flujo,
+
+    `Monto actual (M US$)` =
+      formato_numero(
+        .data$monto_millones_usd
+      ),
+
+    `Cambio mensual (M US$)` =
+      formato_numero(
+        .data$cambio_mensual_millones_usd
+      ),
+
+    `Variación mensual` =
+      formato_porcentaje(
+        .data$variacion_mensual_pct
+      ),
+
+    Movimiento =
+      .data$movimiento_mensual
+  )
+
+# ------------------------------------------------------------
+# Preparar variaciones anuales
+# ------------------------------------------------------------
+
+tabla_variacion_anual <- tabla_variaciones |>
+  dplyr::transmute(
+    Territorio = .data$territorio,
+    Flujo = .data$flujo,
+
+    `Monto actual (M US$)` =
+      formato_numero(
+        .data$monto_millones_usd
+      ),
+
+    `Cambio anual (M US$)` =
+      formato_numero(
+        .data$cambio_anual_millones_usd
+      ),
+
+    `Variación anual` =
+      formato_porcentaje(
+        .data$variacion_anual_pct
+      ),
+
+    Movimiento =
+      .data$movimiento_anual
+  )
+
+# ------------------------------------------------------------
+# Preparar últimos doce meses
+# ------------------------------------------------------------
+
+tabla_meses_reporte <- tabla_ultimos_meses |>
+  dplyr::rename(
+    Periodo = periodo
+  ) |>
+  dplyr::mutate(
+    dplyr::across(
+      -dplyr::all_of("Periodo"),
+      ~ formato_numero(.x)
+    )
+  )
+
+# ------------------------------------------------------------
+# Preparar últimos cinco años
+# ------------------------------------------------------------
+
+tabla_anual_reporte <- tabla_anual |>
+  dplyr::rename(
+    Año = anio
+  ) |>
+  dplyr::mutate(
+    dplyr::across(
+      -dplyr::all_of("Año"),
+      ~ formato_numero(.x)
+    )
+  )
+```
+
+# Resumen ejecutivo
+
+Este reporte analiza el comportamiento del comercio exterior de **Jalisco** y lo compara con el resultado nacional. La información fue obtenida mediante la API de DataMéxico y procesada en R para construir indicadores comparables, tablas históricas y textos que se actualizan automáticamente.
+
+El periodo más reciente que cuenta simultáneamente con exportaciones e importaciones para México y Jalisco es **`r nombre_periodo(periodo_reporte)`**.
+
+`r obtener_texto("jalisco_exportaciones")`
+
+`r obtener_texto("participacion_exportaciones")`
+
+`r obtener_texto("jalisco_importaciones")`
+
+`r obtener_texto("participacion_importaciones")`
+
+`r obtener_texto("balance_jalisco")`
+
+En este documento las gráficas fueron sustituidas por tablas para facilitar la consulta de los montos y permitir la comparación directa entre ambos territorios.
+
+```{r tabla-principal}
+crear_tabla_reporte(
+  tabla_comparacion_reporte,
+  titulo = paste(
+    "Resumen del comercio exterior:",
+    nombre_periodo(periodo_reporte)
+  )
+)
+```
+
+*Nota: los montos están expresados en millones de dólares estadounidenses.*
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# Fuente y características de los datos
+
+## Fuente de información
+
+Los datos provienen de **DataMéxico**, plataforma de la Secretaría de Economía. La información utilizada corresponde al apartado de comercio internacional neto.
+
+La consulta se realizó mediante la dirección base:
+
+<https://www.economia.gob.mx/datamexico/api/data>
+
+Para México se utilizó el identificador `Nation = mex`. Para Jalisco se utilizó `State = 14`; por lo tanto, Guadalajara no fue empleada como sustituto del estado.
+
+```{r tabla-consultas}
+crear_tabla_reporte(
+  tabla_consultas,
+  titulo = "Parámetros principales de las consultas"
+)
+```
+
+## Ficha técnica
+
+```{r tabla-ficha}
+crear_tabla_reporte(
+  tabla_ficha,
+  titulo = "Ficha técnica de la base de datos"
+)
+```
+
+## Calidad de la información
+
+Antes de realizar los cálculos se verificaron la cobertura temporal, los valores faltantes y la existencia de posibles registros duplicados.
+
+```{r tabla-calidad}
+crear_tabla_reporte(
+  tabla_calidad,
+  titulo = "Resumen de calidad por territorio"
+)
+```
+
+DataMéxico señala que los datos de comercio exterior han sido anonimizados por motivos de confidencialidad. Por ello, las cifras deben considerarse aproximaciones y pueden presentar diferencias frente a otras publicaciones estadísticas.
+
+# Preparación de los datos
+
+El procesamiento fue realizado en R mediante las siguientes etapas:
+
+1. Descarga independiente de la información nacional y estatal.
+2. Conservación de los archivos originales en `data/raw`.
+3. Homologación de los nombres de las variables.
+4. Conversión del mes a un formato de fecha.
+5. Conversión del valor comercial a una variable numérica.
+6. Clasificación de los flujos como exportaciones o importaciones.
+7. Incorporación de una variable para identificar el territorio.
+8. Revisión de fechas faltantes, montos negativos y duplicados.
+9. Unión de las bases de México y Jalisco.
+10. Construcción de una secuencia mensual completa.
+11. Selección del último periodo común entre ambos territorios.
+12. Generación de tablas y textos dinámicos.
+
+Los valores faltantes se conservaron como no disponibles; no fueron reemplazados por cero.
+
+## Indicadores calculados
+
+Los indicadores se construyeron con las siguientes expresiones:
+
+- **Cambio absoluto:** monto actual menos monto del periodo de comparación.
+- **Variación porcentual:** cambio absoluto dividido entre el monto del periodo de comparación, multiplicado por 100.
+- **Comercio total:** exportaciones más importaciones.
+- **Balance comercial:** exportaciones menos importaciones.
+- **Participación de Jalisco:** monto de Jalisco dividido entre el monto nacional, multiplicado por 100.
+
+La variable de movimiento fue asignada automáticamente:
+
+- **Aumentó:** cambio mayor que cero.
+- **Disminuyó:** cambio menor que cero.
+- **Se mantuvo sin cambio:** cambio igual a cero.
+- **Sin dato comparable:** no existe información para el periodo de comparación.
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# Resultados
+
+## Comparación entre México y Jalisco
+
+```{r tabla-comparacion}
+crear_tabla_reporte(
+  tabla_comparacion_reporte,
+  titulo = paste(
+    "Comparación estatal y nacional:",
+    nombre_periodo(periodo_reporte)
+  )
+)
+```
+
+La tabla permite comparar en una misma vista las exportaciones, importaciones, comercio total y balance comercial. La participación muestra cuánto representa Jalisco respecto al monto nacional.
+
+## Variación mensual
+
+La comparación mensual mide el cambio frente al mes inmediato anterior.
+
+```{r tabla-mensual}
+crear_tabla_reporte(
+  tabla_variacion_mensual,
+  titulo = "Variación respecto al mes anterior",
+  tamano = 8
+)
+```
+
+`r obtener_texto("mexico_exportaciones")`
+
+`r obtener_texto("mexico_importaciones")`
+
+## Variación anual
+
+La comparación anual utiliza el mismo mes del año anterior. Este indicador ayuda a reducir el efecto de la estacionalidad.
+
+```{r tabla-variacion-anual}
+crear_tabla_reporte(
+  tabla_variacion_anual,
+  titulo = "Variación respecto al mismo mes del año anterior",
+  tamano = 8
+)
+```
+
+`r obtener_texto("jalisco_exportaciones")`
+
+`r obtener_texto("jalisco_importaciones")`
+
+## Evolución de los últimos doce meses
+
+La siguiente tabla sustituye la gráfica de serie de tiempo y presenta los doce meses más recientes disponibles.
+
+```{r tabla-doce-meses}
+crear_tabla_reporte(
+  tabla_meses_reporte,
+  titulo = "Evolución mensual en millones de US$",
+  tamano = 8
+)
+```
+
+## Comparación anual
+
+Los montos anuales corresponden únicamente a años que contienen doce meses completos para México y Jalisco.
+
+```{r tabla-cinco-anios}
+if (nrow(tabla_anual_reporte) > 0) {
+  crear_tabla_reporte(
+    tabla_anual_reporte,
+    titulo = "Últimos cinco años completos en millones de US$",
+    tamano = 8
+  )
+} else {
+  knitr::asis_output(
+    "> No existen suficientes años completos para elaborar esta tabla."
+  )
+}
+```
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# Interpretación de los resultados
+
+## Comportamiento de Jalisco
+
+`r obtener_texto("jalisco_exportaciones")`
+
+`r obtener_texto("participacion_exportaciones")`
+
+`r obtener_texto("jalisco_importaciones")`
+
+`r obtener_texto("participacion_importaciones")`
+
+## Balance comercial
+
+`r obtener_texto("balance_jalisco")`
+
+`r obtener_texto("balance_mexico")`
+
+Un superávit significa que las exportaciones fueron mayores que las importaciones. Un déficit representa la situación contraria. Este resultado describe únicamente la diferencia entre ambos flujos y no determina, por sí solo, el desempeño general de la economía.
+
+# Conclusiones
+
+El análisis permite comparar el comercio exterior de Jalisco con el resultado nacional mediante una misma estructura de datos. La periodicidad mensual facilita la identificación de cambios recientes, mientras que la variación anual ofrece una comparación más apropiada frente a posibles efectos estacionales.
+
+Los textos del reporte dependen directamente de los indicadores calculados. En consecuencia, expresiones como **aumentó**, **disminuyó**, **superávit** o **déficit** cambiarán automáticamente cuando se actualicen los datos.
+
+La participación de Jalisco permite dimensionar la importancia relativa del estado dentro del comercio exterior nacional. Sin embargo, los resultados deben interpretarse considerando la anonimización señalada por DataMéxico y sin atribuir causalidad a los cambios observados.
+
+# Limitaciones
+
+- Las cifras están sujetas al proceso de anonimización de DataMéxico.
+- Los datos faltantes no se interpretan como ausencia de comercio.
+- El reporte selecciona el último mes completo para ambos territorios.
+- Las variaciones describen cambios, pero no explican sus causas.
+- No se realizaron ajustes por inflación o tipo de cambio.
+- Los resultados dependen de la disponibilidad y actualización de la API.
+
+# Reproducibilidad
+
+El proyecto puede actualizarse ejecutando los archivos en el siguiente orden:
+
+1. `00_configuracion.R`
+2. `R/01_descarga_datos.R`
+3. `R/02_limpieza_datos.R`
+4. `R/03_indicadores.R`
+5. `R/04_tablas_textos.R`
+6. `reporte_datamexico_jalisco.Rmd`
+
+# Posibles ampliaciones
+
+Con los datos actuales todavía podemos agregar una tabla con todos los meses históricos o seleccionar un periodo distinto. También es posible incorporar:
+
+- Principales productos exportados e importados.
+- Principales destinos de exportación.
+- Principales países de origen de las importaciones.
+- Comparación de Jalisco con otras entidades federativas.
+- Participaciones anuales.
+- Pronósticos de series de tiempo.
+
+Estas ampliaciones requieren consultas adicionales para evitar mezclar los totales mensuales con desagregaciones por producto o país.
+
+# Referencia
+
+DataMéxico. Secretaría de Economía. *Perfil económico de México y comercio exterior*.  
+<https://www.economia.gob.mx/datamexico/es/profile/geo/mexico>

@@ -1,0 +1,31 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - dashboard.qmd
+
+lang: es
+
+website:
+  title: "Comercio exterior de Jalisco"
+  navbar:
+    background: "#12344d"
+    left:
+      - href: index.qmd
+        text: Reportes
+      - href: dashboard.qmd
+        text: Dashboard
+  page-footer:
+    center: "Fuente: DataMéxico (Secretaría de Economía) · Elaboración propia"
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: false
+
+execute:
+  echo: false
+  warning: false
+  message: false

@@ -1,0 +1,172 @@
+---
+title: "Dashboard"
+subtitle: "Comercio exterior de Jalisco: lo más importante"
+---
+
+```{r}
+#| label: datos
+leer <- function(archivo) {
+  readr::read_csv(
+    here::here("data", "processed", archivo),
+    show_col_types = FALSE,
+    progress = FALSE
+  )
+}
+
+act   <- leer("indicadores_actuales.csv") |> dplyr::mutate(fecha = as.Date(fecha))
+bal   <- leer("balance_comercial.csv")    |> dplyr::mutate(fecha = as.Date(fecha))
+part  <- leer("participacion_jalisco.csv") |> dplyr::mutate(fecha = as.Date(fecha))
+anual <- leer("tabla_anual.csv")
+rank  <- leer("ranking_entidades.csv")
+
+meses <- c("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+           "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+f_ult <- max(act$fecha)
+periodo_txt <- paste(meses[as.integer(format(f_ult, "%m"))], "de", format(f_ult, "%Y"))
+
+fila <- function(territorio, flujo) {
+  act[act$territorio == territorio & act$flujo == flujo, ][1, ]
+}
+miles <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+pct   <- function(x) sprintf("%+.1f%%", x)
+
+exp_j <- fila("Jalisco", "Exportaciones")
+imp_j <- fila("Jalisco", "Importaciones")
+balance_m <- (exp_j$monto_usd - imp_j$monto_usd) / 1e6
+```
+
+## Indicadores de `r periodo_txt`
+
+```{r}
+#| output: asis
+kpi <- function(titulo, valor, nota, clase = "") {
+  sprintf(
+    '<div class="kpi %s"><div class="kpi-t">%s</div><div class="kpi-v">%s</div><div class="kpi-n">%s</div></div>',
+    clase, titulo, valor, nota
+  )
+}
+
+cat('<div class="kpi-grid">')
+cat(kpi("Exportaciones de Jalisco",
+        paste0("US$ ", miles(exp_j$monto_usd / 1e6), " M"),
+        paste(pct(exp_j$variacion_anual_pct), "vs. mismo mes del año anterior")))
+cat(kpi("Importaciones de Jalisco",
+        paste0("US$ ", miles(imp_j$monto_usd / 1e6), " M"),
+        paste(pct(imp_j$variacion_anual_pct), "vs. mismo mes del año anterior"), "imp"))
+cat(kpi("Balance comercial",
+        paste0(ifelse(balance_m >= 0, "+", "−"), "US$ ", miles(abs(balance_m)), " M"),
+        ifelse(balance_m >= 0, "Superávit", "Déficit"), "bal"))
+cat(kpi("Peso en exportaciones nacionales",
+        sprintf("%.1f%%", exp_j$participacion_jalisco_pct),
+        sprintf("Importaciones: %.1f%% del total nacional", imp_j$participacion_jalisco_pct), "part"))
+cat('</div>')
+```
+
+## Exportaciones e importaciones de Jalisco
+
+```{r}
+jal <- bal |> dplyr::filter(territorio == "Jalisco")
+
+plotly::plot_ly(jal, x = ~fecha) |>
+  plotly::add_lines(
+    y = ~Exportaciones / 1e6, name = "Exportaciones",
+    line = list(color = "#1d6fa5"),
+    hovertemplate = "%{y:,.0f} M US$"
+  ) |>
+  plotly::add_lines(
+    y = ~Importaciones / 1e6, name = "Importaciones",
+    line = list(color = "#e9a23b"),
+    hovertemplate = "%{y:,.0f} M US$"
+  ) |>
+  plotly::layout(
+    hovermode = "x unified",
+    yaxis = list(title = "Millones de US$"),
+    xaxis = list(
+      title = "",
+      rangeselector = list(buttons = list(
+        list(count = 2, label = "2 años", step = "year", stepmode = "backward"),
+        list(count = 5, label = "5 años", step = "year", stepmode = "backward"),
+        list(count = 10, label = "10 años", step = "year", stepmode = "backward"),
+        list(step = "all", label = "Todo")
+      ))
+    ),
+    legend = list(orientation = "h", y = -0.15)
+  )
+```
+
+## Balance comercial mensual de Jalisco
+
+```{r}
+plotly::plot_ly(
+  jal, x = ~fecha, y = ~balance_comercial_usd / 1e6,
+  type = "bar", name = "Balance",
+  marker = list(color = ~ifelse(balance_comercial_usd >= 0, "#2a9d8f", "#d1495b")),
+  hovertemplate = "%{y:,.0f} M US$"
+) |>
+  plotly::layout(
+    yaxis = list(title = "Millones de US$"),
+    xaxis = list(title = ""),
+    showlegend = FALSE
+  )
+```
+
+<p class="nota">Verde: superávit (exportaciones mayores que importaciones). Rojo: déficit.</p>
+
+## Participación de Jalisco en el comercio nacional
+
+```{r}
+plotly::plot_ly(
+  part, x = ~fecha, y = ~participacion_jalisco_pct, color = ~flujo,
+  colors = c("Exportaciones" = "#1d6fa5", "Importaciones" = "#e9a23b"),
+  type = "scatter", mode = "lines",
+  hovertemplate = "%{y:.1f}%"
+) |>
+  plotly::layout(
+    hovermode = "x unified",
+    yaxis = list(title = "% del total nacional"),
+    xaxis = list(title = ""),
+    legend = list(orientation = "h", y = -0.15)
+  )
+```
+
+## Resumen anual (millones de US$)
+
+```{r}
+anual |>
+  dplyr::mutate(anio = as.character(anio)) |>
+  dplyr::rename(`Año` = anio) |>
+  knitr::kable(digits = 1, format.args = list(big.mark = ","), align = "lrrrr")
+```
+
+## Entidades con más exportaciones
+
+```{r}
+anio_rank <- max(rank$anio)
+
+top <- rank |>
+  dplyr::arrange(dplyr::desc(exportaciones_millones_usd)) |>
+  dplyr::slice_head(n = 10)
+
+if (!"Jalisco" %in% top$entidad) {
+  top <- dplyr::bind_rows(top, dplyr::filter(rank, entidad == "Jalisco"))
+}
+
+top <- top |>
+  dplyr::mutate(
+    color = ifelse(entidad == "Jalisco", "#1d6fa5", "#b8c4d0"),
+    entidad = factor(entidad, levels = rev(entidad))
+  )
+
+plotly::plot_ly(
+  top, x = ~exportaciones_millones_usd, y = ~entidad,
+  type = "bar", orientation = "h",
+  marker = list(color = ~color),
+  hovertemplate = "%{x:,.0f} M US$"
+) |>
+  plotly::layout(
+    xaxis = list(title = "Millones de US$"),
+    yaxis = list(title = "")
+  )
+```
+
+<p class="nota">Datos anuales de <strong>`r anio_rank`</strong>. Jalisco aparece resaltado. Este ranking no se actualiza con el flujo mensual; se actualiza cuando vuelvas a generar `ranking_entidades.csv`.</p>

@@ -1,0 +1,26 @@
+Package: pap.datamexico
+Title: Reportes de comercio exterior de Jalisco (DataMexico)
+Version: 0.1.0
+Description: Dependencias del proyecto. Este archivo solo lo usa GitHub Actions
+    para instalar los paquetes de R; no es un paquete que se instale.
+Encoding: UTF-8
+Imports:
+    here,
+    httr2,
+    jsonlite,
+    dplyr,
+    tidyr,
+    purrr,
+    tibble,
+    readr,
+    stringr,
+    janitor,
+    lubridate,
+    glue,
+    scales,
+    knitr,
+    rmarkdown,
+    flextable,
+    officer,
+    plotly,
+    htmltools

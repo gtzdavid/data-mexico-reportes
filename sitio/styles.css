@@ -1,0 +1,15 @@
+.hero { background:#eef3f7; border-radius:12px; padding:2rem; margin:1rem 0 2rem; }
+.hero h2 { margin-top:0; border:none; }
+.hero .meta { color:#5b6b78; margin:.5rem 0 1.2rem; }
+.tabla-reportes { width:100%; border-collapse:collapse; }
+.tabla-reportes th, .tabla-reportes td { padding:.6rem .8rem; border-bottom:1px solid #dde3e8; text-align:left; }
+.tabla-reportes td.der, .tabla-reportes th.der { text-align:right; }
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:1rem; margin:1rem 0 2rem; }
+.kpi { background:#fff; border:1px solid #dde3e8; border-left:5px solid #1d6fa5; border-radius:8px; padding:1rem; }
+.kpi.imp { border-left-color:#e9a23b; }
+.kpi.bal { border-left-color:#2a9d8f; }
+.kpi.part { border-left-color:#6c5ce7; }
+.kpi-t { font-size:.85rem; color:#5b6b78; text-transform:uppercase; letter-spacing:.03em; }
+.kpi-v { font-size:1.8rem; font-weight:700; color:#12344d; line-height:1.2; }
+.kpi-n { font-size:.85rem; color:#5b6b78; }
+.nota { font-size:.85rem; color:#5b6b78; }

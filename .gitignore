@@ -1,0 +1,17 @@
+# RStudio / R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# Quarto
+/.quarto/
+sitio/.quarto/
+sitio/_site/
+*_files/
+
+# Salidas locales que no se publican
+/*.docx
+/*.html
+/output/*
+!/output/.gitkeep

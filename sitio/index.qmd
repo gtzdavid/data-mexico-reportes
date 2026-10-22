@@ -1,0 +1,75 @@
+---
+title: "Reportes de comercio exterior de Jalisco"
+subtitle: "Exportaciones e importaciones · comparación estatal y nacional"
+---
+
+```{r}
+#| output: asis
+meses <- c("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+           "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+
+dir_reportes <- here::here("reportes")
+
+archivos <- sort(
+  list.files(
+    dir_reportes,
+    pattern = "^reporte_datamexico_jalisco_[0-9]{4}-[0-9]{2}\\.docx$"
+  ),
+  decreasing = TRUE
+)
+
+etiqueta <- function(a) {
+  anio <- sub("^.*_([0-9]{4})-([0-9]{2})\\.docx$", "\\1", a)
+  mes  <- as.integer(sub("^.*_([0-9]{4})-([0-9]{2})\\.docx$", "\\2", a))
+  txt  <- paste(meses[mes], "de", anio)
+  paste0(toupper(substr(txt, 1, 1)), substr(txt, 2, nchar(txt)))
+}
+
+tamano <- function(a) {
+  sprintf("%d KB", round(file.size(file.path(dir_reportes, a)) / 1024))
+}
+
+if (length(archivos) == 0) {
+  cat('<div class="hero"><p>Aún no hay reportes publicados.</p></div>')
+} else {
+  ultimo <- archivos[1]
+
+  cat(sprintf(
+    paste0(
+      '<div class="hero">',
+      '<h2>Reporte más reciente</h2>',
+      '<p class="meta">Datos al cierre de %s · Formato Word (.docx) · %s</p>',
+      '<a class="btn btn-primary btn-lg" href="descargas/%s" download>Descargar reporte</a>',
+      '</div>'
+    ),
+    tolower(etiqueta(ultimo)), tamano(ultimo), ultimo
+  ))
+
+  cat("\n\n## Historial de reportes\n\n")
+
+  filas <- vapply(archivos, function(a) {
+    sprintf(
+      '<tr><td>%s</td><td class="der">%s</td><td class="der"><a href="descargas/%s" download>Descargar</a></td></tr>',
+      etiqueta(a), tamano(a), a
+    )
+  }, character(1))
+
+  cat(
+    '<table class="tabla-reportes">',
+    '<thead><tr><th>Periodo de los datos</th><th class="der">Tamaño</th><th class="der"></th></tr></thead>',
+    '<tbody>', filas, '</tbody></table>',
+    sep = "\n"
+  )
+}
+```
+
+## Sobre estos reportes
+
+Cada reporte compara el comercio exterior de **Jalisco** con el de **México**: valores mensuales y anuales de exportaciones e importaciones, balance comercial, variaciones y participación de Jalisco en el total nacional.
+
+Los datos se descargan de la API de [DataMéxico](https://www.economia.gob.mx/datamexico/) y el sitio se actualiza automáticamente cada mes. Para ver las cifras más importantes de forma interactiva, entra a la pestaña **Dashboard**.
+
+```{r}
+#| output: asis
+cat(sprintf('<p class="nota">Sitio actualizado el %s.</p>', format(Sys.Date(), "%d/%m/%Y")))
+```

@@ -1,0 +1,750 @@
+---
+lang: es
+output:
+  word_document:
+    toc: false
+  html_document:
+    toc: false
+---
+
+```{r configuracion, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+
+# ============================================================
+# 1. Paquetes
+# ============================================================
+
+paquetes <- c(
+  "here", "readr", "dplyr",
+  "scales", "flextable", "officer", "knitr"
+)
+
+faltantes <- paquetes[
+  !vapply(
+    paquetes,
+    requireNamespace,
+    logical(1),
+    quietly = TRUE
+  )
+]
+
+if (length(faltantes) > 0) {
+  stop(
+    paste(
+      "Faltan paquetes:",
+      paste(faltantes, collapse = ", ")
+    )
+  )
+}
+
+# ============================================================
+# 2. Leer archivos procesados
+# ============================================================
+
+leer_archivo <- function(nombre) {
+
+  ruta <- here::here(
+    "data",
+    "processed",
+    nombre
+  )
+
+  if (!file.exists(ruta)) {
+    stop(
+      paste0(
+        "No se encontró: ", ruta,
+        "\nEjecuta los scripts del proyecto, incluido ",
+        "R/05_ranking_entidades.R, antes de generar la ficha."
+      )
+    )
+  }
+
+  readr::read_csv(
+    ruta,
+    show_col_types = FALSE,
+    progress = FALSE
+  )
+}
+
+indicadores <- leer_archivo(
+  "indicadores_comercio.csv"
+) |>
+  dplyr::mutate(
+    fecha = as.Date(.data$fecha)
+  )
+
+tabla_comparacion <- leer_archivo(
+  "tabla_comparacion.csv"
+)
+
+tabla_variaciones <- leer_archivo(
+  "tabla_variaciones.csv"
+)
+
+tabla_meses <- leer_archivo(
+  "tabla_ultimos_meses.csv"
+)
+
+# Archivos nuevos de rankings
+
+ranking_entidades <- leer_archivo(
+  "ranking_entidades.csv"
+) |>
+  dplyr::arrange(
+    .data$ranking_exportaciones,
+    .data$entidad
+  )
+
+ranking_rubros <- leer_archivo(
+  "top5_rubros_jalisco.csv"
+) |>
+  dplyr::arrange(
+    dplyr::desc(.data$comercio_total_millones_usd),
+    .data$rubro
+  ) |>
+  dplyr::slice_head(n = 5)
+
+metadata_ranking <- leer_archivo(
+  "metadata_ranking.csv"
+)
+
+# ============================================================
+# 3. Periodo mensual más reciente completo
+# ============================================================
+
+periodos_completos <- indicadores |>
+  dplyr::filter(
+    !is.na(.data$fecha),
+    is.finite(.data$monto_usd),
+    .data$territorio %in% c("México", "Jalisco"),
+    .data$flujo %in% c("Exportaciones", "Importaciones")
+  ) |>
+  dplyr::distinct(
+    .data$fecha,
+    .data$territorio,
+    .data$flujo
+  ) |>
+  dplyr::count(
+    .data$fecha,
+    name = "combinaciones"
+  ) |>
+  dplyr::filter(.data$combinaciones == 4)
+
+if (nrow(periodos_completos) == 0) {
+  stop(
+    "No existe un mes con ambos flujos para México y Jalisco."
+  )
+}
+
+periodo_reporte <- max(periodos_completos$fecha)
+
+# ============================================================
+# 4. Validar los archivos de rankings
+# ============================================================
+
+if (nrow(metadata_ranking) != 1) {
+  stop(
+    "Los metadatos del ranking deben contener un solo año."
+  )
+}
+
+anio_ranking <- as.integer(
+  metadata_ranking$anio[[1]]
+)
+
+if (
+  is.na(anio_ranking) ||
+  anyNA(ranking_entidades$anio) ||
+  anyNA(ranking_rubros$anio) ||
+  !all(ranking_entidades$anio == anio_ranking) ||
+  !all(ranking_rubros$anio == anio_ranking)
+) {
+  stop(
+    paste(
+      "Los archivos de ranking corresponden a años distintos.",
+      "Ejecuta nuevamente R/05_ranking_entidades.R."
+    )
+  )
+}
+
+if (
+  nrow(ranking_entidades) != 32 ||
+  !setequal(
+    ranking_entidades$id_estado,
+    seq_len(32)
+  )
+) {
+  stop(
+    "El ranking total debe contener las 32 entidades federativas."
+  )
+}
+
+# ============================================================
+# 5. Funciones de formato
+# ============================================================
+
+meses_es <- c(
+  "enero", "febrero", "marzo", "abril",
+  "mayo", "junio", "julio", "agosto",
+  "septiembre", "octubre", "noviembre",
+  "diciembre"
+)
+
+nombre_periodo <- function(fecha) {
+
+  fecha <- as.Date(fecha)
+
+  paste(
+    meses_es[as.integer(format(fecha, "%m"))],
+    "de",
+    format(fecha, "%Y")
+  )
+}
+
+formato_numero <- function(valor) {
+
+  ifelse(
+    is.na(valor),
+    "N/D",
+    scales::number(
+      valor,
+      accuracy = 0.1,
+      big.mark = ",",
+      decimal.mark = "."
+    )
+  )
+}
+
+formato_porcentaje <- function(valor) {
+
+  ifelse(
+    is.na(valor),
+    "N/D",
+    paste0(
+      scales::number(
+        valor,
+        accuracy = 0.1,
+        decimal.mark = "."
+      ),
+      "%"
+    )
+  )
+}
+
+formato_movimiento <- function(movimiento, porcentaje) {
+
+  dplyr::case_when(
+    is.na(porcentaje) ~ "N/D",
+
+    movimiento == "Se mantuvo sin cambio" ~
+      "Sin cambio",
+
+    TRUE ~ paste(
+      movimiento,
+      formato_porcentaje(abs(porcentaje))
+    )
+  )
+}
+
+formato_lugar <- function(posicion, entidades) {
+
+  ifelse(
+    is.na(posicion),
+    "N/D",
+    paste0(posicion, "/", entidades)
+  )
+}
+
+# ============================================================
+# 6. Diseño de tablas
+# ============================================================
+
+crear_tabla <- function(
+  datos,
+  titulo,
+  tamano = 8,
+  anchos = NULL,
+  filas_resaltar = integer()
+) {
+
+  tabla <- flextable::flextable(datos) |>
+    flextable::theme_vanilla() |>
+    flextable::bg(
+      part = "header",
+      bg = "#981B3F"
+    ) |>
+    flextable::color(
+      part = "header",
+      color = "#FFFFFF"
+    ) |>
+    flextable::bold(
+      part = "header",
+      bold = TRUE
+    ) |>
+    flextable::font(
+      fontname = "Arial",
+      part = "all"
+    ) |>
+    flextable::fontsize(
+      size = tamano,
+      part = "all"
+    ) |>
+    flextable::align(
+      align = "center",
+      part = "all"
+    ) |>
+    flextable::align(
+      j = 1,
+      align = "left",
+      part = "all"
+    ) |>
+    flextable::padding(
+      padding = 2,
+      part = "all"
+    ) |>
+    flextable::autofit() |>
+    flextable::set_table_properties(
+      layout = "autofit",
+      width = 1
+    ) |>
+    flextable::set_caption(
+      caption = titulo
+    )
+
+  # Anchos compactos para las nuevas tablas de rankings
+
+  if (!is.null(anchos)) {
+    tabla <- tabla |>
+      flextable::width(
+        j = seq_along(anchos),
+        width = anchos
+      ) |>
+      flextable::padding(
+        padding.top = 1,
+        padding.bottom = 1,
+        padding.left = 3,
+        padding.right = 3,
+        part = "all"
+      ) |>
+      flextable::set_table_properties(
+        layout = "fixed",
+        align = "center",
+        opts_word = list(
+          split = FALSE,
+          keep_with_next = FALSE,
+          repeat_headers = TRUE
+        )
+      )
+  }
+
+  # Resaltar a Jalisco
+
+  if (length(filas_resaltar) > 0) {
+    tabla <- tabla |>
+      flextable::bg(
+        i = filas_resaltar,
+        bg = "#FCE4EC",
+        part = "body"
+      ) |>
+      flextable::bold(
+        i = filas_resaltar,
+        bold = TRUE,
+        part = "body"
+      )
+  }
+
+  tabla
+}
+
+# ============================================================
+# 7. Tabla principal México–Jalisco
+# ============================================================
+
+tabla_principal <- tabla_comparacion |>
+  dplyr::transmute(
+    Indicador = .data$indicador,
+
+    `México (M US$)` =
+      formato_numero(.data$mexico_millones_usd),
+
+    `Jalisco (M US$)` =
+      formato_numero(.data$jalisco_millones_usd),
+
+    `Participación Jal.` =
+      formato_porcentaje(.data$participacion_jalisco_pct)
+  )
+
+# ============================================================
+# 8. Tabla de variaciones
+# ============================================================
+
+tabla_movimientos <- tabla_variaciones |>
+  dplyr::transmute(
+    Territorio = .data$territorio,
+    Flujo = .data$flujo,
+
+    `Monto (M US$)` =
+      formato_numero(.data$monto_millones_usd),
+
+    Mensual = formato_movimiento(
+      .data$movimiento_mensual,
+      .data$variacion_mensual_pct
+    ),
+
+    Anual = formato_movimiento(
+      .data$movimiento_anual,
+      .data$variacion_anual_pct
+    )
+  )
+
+# ============================================================
+# 9. Tabla de los últimos seis meses
+# ============================================================
+
+tabla_seis_meses <- tabla_meses |>
+  dplyr::slice_tail(n = 6) |>
+  dplyr::rename(
+    Periodo = periodo,
+    `Jal. Exp.` = `Jalisco - Exportaciones`,
+    `Jal. Imp.` = `Jalisco - Importaciones`,
+    `Méx. Exp.` = `México - Exportaciones`,
+    `Méx. Imp.` = `México - Importaciones`
+  ) |>
+  dplyr::mutate(
+    dplyr::across(
+      -dplyr::all_of("Periodo"),
+      ~ formato_numero(.x)
+    )
+  )
+
+# ============================================================
+# 10. Hallazgos dinámicos originales
+# ============================================================
+
+crear_hallazgo <- function(
+  territorio_buscado,
+  flujo_buscado
+) {
+
+  fila <- tabla_variaciones |>
+    dplyr::filter(
+      .data$territorio == .env$territorio_buscado,
+      .data$flujo == .env$flujo_buscado
+    )
+
+  if (nrow(fila) != 1) {
+    stop(
+      paste(
+        "Debe existir una sola fila de variaciones para",
+        territorio_buscado,
+        "y",
+        flujo_buscado,
+        ". Ejecuta nuevamente R/04_tablas_textos.R."
+      )
+    )
+  }
+
+  paste0(
+    "Las ",
+    tolower(flujo_buscado),
+    " de ",
+    territorio_buscado,
+    " fueron de US$",
+    formato_numero(fila$monto_millones_usd[[1]]),
+    " M; ",
+    tolower(
+      formato_movimiento(
+        fila$movimiento_mensual[[1]],
+        fila$variacion_mensual_pct[[1]]
+      )
+    ),
+    " mensualmente y ",
+    tolower(
+      formato_movimiento(
+        fila$movimiento_anual[[1]],
+        fila$variacion_anual_pct[[1]]
+      )
+    ),
+    " anualmente."
+  )
+}
+
+obtener_indicador <- function(nombre) {
+
+  fila <- tabla_comparacion |>
+    dplyr::filter(
+      .data$indicador == .env$nombre
+    )
+
+  if (nrow(fila) != 1) {
+    stop(
+      paste(
+        "Debe existir una sola fila para el indicador:",
+        nombre
+      )
+    )
+  }
+
+  fila
+}
+
+fila_exportaciones <- obtener_indicador(
+  "Exportaciones"
+)
+
+fila_importaciones <- obtener_indicador(
+  "Importaciones"
+)
+
+fila_balance <- obtener_indicador(
+  "Balance comercial"
+)
+
+texto_participacion <- paste0(
+  "Jalisco representó ",
+  formato_porcentaje(
+    fila_exportaciones$participacion_jalisco_pct[[1]]
+  ),
+  " de las exportaciones nacionales y ",
+  formato_porcentaje(
+    fila_importaciones$participacion_jalisco_pct[[1]]
+  ),
+  " de las importaciones."
+)
+
+balance_jalisco <- fila_balance$jalisco_millones_usd[[1]]
+
+tipo_balance_jalisco <- dplyr::case_when(
+  is.na(balance_jalisco) ~ NA_character_,
+  balance_jalisco > 0 ~ "superávit",
+  balance_jalisco < 0 ~ "déficit",
+  TRUE ~ "equilibrio"
+)
+
+texto_balance <- if (is.na(balance_jalisco)) {
+
+  "El balance comercial de Jalisco no está disponible."
+
+} else {
+
+  paste0(
+    "Jalisco presentó un ",
+    tipo_balance_jalisco,
+    " comercial de US$",
+    formato_numero(abs(balance_jalisco)),
+    " M."
+  )
+
+}
+
+# ============================================================
+# 11. Nueva tabla de las 32 entidades
+# ============================================================
+
+tabla_ranking_entidades <- ranking_entidades |>
+  dplyr::transmute(
+    Entidad = .data$entidad,
+
+    `Exp. (M US$)` =
+      formato_numero(.data$exportaciones_millones_usd),
+
+    `Lugar exp.` =
+      .data$ranking_exportaciones,
+
+    `Imp. (M US$)` =
+      formato_numero(.data$importaciones_millones_usd),
+
+    `Lugar imp.` =
+      .data$ranking_importaciones
+  )
+
+fila_jalisco_tabla <- which(
+  ranking_entidades$id_estado == 14L
+)
+
+# ============================================================
+# 12. Nueva tabla de los cinco principales rubros
+# ============================================================
+
+tabla_ranking_rubros <- ranking_rubros |>
+  dplyr::transmute(
+    `Rubro HS2` = .data$rubro,
+
+    `Exp. (M US$)` =
+      formato_numero(.data$exportaciones_millones_usd),
+
+    `Lugar exp.` = formato_lugar(
+      .data$ranking_exportaciones,
+      .data$entidades_exportaciones
+    ),
+
+    `Imp. (M US$)` =
+      formato_numero(.data$importaciones_millones_usd),
+
+    `Lugar imp.` = formato_lugar(
+      .data$ranking_importaciones,
+      .data$entidades_importaciones
+    )
+  )
+
+# ============================================================
+# 13. Nuevo hallazgo del ranking anual
+# ============================================================
+
+fila_jalisco_ranking <- ranking_entidades |>
+  dplyr::filter(
+    .data$id_estado == 14L
+  )
+
+texto_ranking <- paste0(
+  "En ",
+  anio_ranking,
+  ", Jalisco ocupó el lugar ",
+  fila_jalisco_ranking$ranking_exportaciones[[1]],
+  " en exportaciones y el lugar ",
+  fila_jalisco_ranking$ranking_importaciones[[1]],
+  " en importaciones entre las 32 entidades federativas."
+)
+```
+
+# FICHA DE COMERCIO EXTERIOR DE JALISCO
+
+**Comparación estatal y nacional**  
+**Periodo:** `r nombre_periodo(periodo_reporte)`  
+**Actualización de la ficha:** `r format(Sys.Date(), "%d/%m/%Y")`  
+**Elaboró:** David
+
+Esta ficha presenta los principales resultados del comercio exterior de Jalisco y su comparación con México. Los valores se expresan en millones de dólares estadounidenses.
+
+```{r tabla-principal}
+crear_tabla(
+  tabla_principal,
+  titulo = paste(
+    "Indicadores principales:",
+    nombre_periodo(periodo_reporte)
+  ),
+  tamano = 8
+)
+```
+
+## Resultados principales
+
+- `r crear_hallazgo("Jalisco", "Exportaciones")`
+- `r crear_hallazgo("Jalisco", "Importaciones")`
+- `r texto_participacion`
+- `r texto_balance`
+
+**Lectura del balance:** un valor positivo representa superávit comercial y un valor negativo representa déficit.
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# Variaciones y evolución reciente
+
+La comparación mensual utiliza el mes inmediato anterior. La comparación anual utiliza el mismo mes del año anterior.
+
+```{r tabla-variaciones}
+crear_tabla(
+  tabla_movimientos,
+  titulo = "Movimiento mensual y anual",
+  tamano = 7.5
+)
+```
+
+## Últimos seis meses
+
+```{r tabla-seis-meses}
+crear_tabla(
+  tabla_seis_meses,
+  titulo = "Comercio exterior en millones de US$",
+  tamano = 7.5
+)
+```
+
+## Fuente y metodología
+
+**Fuente:** DataMéxico, Secretaría de Economía.  
+<https://www.economia.gob.mx/datamexico/es/profile/geo/mexico>
+
+Los datos fueron obtenidos mediante la API de DataMéxico. Para México se utilizó `Nation = mex` y para Jalisco `State = 14`, con periodicidad mensual y la medida `Trade Value`.
+
+Las bases fueron homologadas, convertidas a formato de fecha y revisadas para detectar valores faltantes, montos negativos y duplicados. Posteriormente se calcularon cambios mensuales y anuales, comercio total, balance comercial y participación de Jalisco.
+
+*Nota: DataMéxico señala que los datos de comercio exterior han sido anonimizados; por ello, las cifras deben considerarse aproximaciones.*
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# Posición de Jalisco en el comercio exterior nacional
+
+**Periodo del ranking:** enero–diciembre de `r anio_ranking`.  
+**Unidad:** millones de dólares estadounidenses (M US$).
+
+Los rankings utilizan un año completo. Este periodo es independiente del mes presentado en los apartados anteriores.
+
+**`r texto_ranking`**
+
+## Ranking de las 32 entidades federativas
+
+La tabla se ordena por exportaciones y muestra también el lugar de cada entidad en importaciones. **La fila de Jalisco se resalta en rosa.**
+
+```{r tabla-ranking-entidades}
+crear_tabla(
+  tabla_ranking_entidades,
+  titulo = paste(
+    "Ranking estatal de exportaciones e importaciones:",
+    anio_ranking
+  ),
+  tamano = 7.5,
+  anchos = c(2.3, 1.1, 0.9, 1.1, 0.9),
+  filas_resaltar = fila_jalisco_tabla
+)
+```
+
+## Principales rubros de Jalisco y posición nacional
+
+Se presentan los cinco principales rubros HS2 de Jalisco, seleccionados por el monto de sus exportaciones más importaciones, con ambos flujos publicados.
+
+El lugar de Jalisco se calcula por separado dentro de cada rubro y flujo, comparando sus montos con los de las demás entidades.
+
+```{r tabla-ranking-rubros}
+if (nrow(tabla_ranking_rubros) > 0) {
+
+  crear_tabla(
+    tabla_ranking_rubros,
+    titulo = paste(
+      "Principales rubros de Jalisco y posición nacional:",
+      anio_ranking
+    ),
+    tamano = 7.5,
+    anchos = c(3.0, 1.05, 0.6, 1.05, 0.6)
+  )
+
+} else {
+
+  knitr::asis_output(
+    "No existen rubros con ambos montos publicados para esta selección."
+  )
+
+}
+```
+
+*En la tabla por rubro, “Lugar” se expresa como posición/entidades con dato. Por ejemplo, 3/30 significa tercer lugar entre las 30 entidades con monto publicado para ese rubro y flujo. N/D indica que no existe un monto disponible para calcular la posición.*
+
+## Metodología de los rankings
+
+Se utilizaron consultas adicionales de la API de DataMéxico del cubo estatal `economy_foreign_trade_ent`, con nivel de producto HS2 y medida `Trade Value`.
+
+Se seleccionó el último año calendario cerrado con doce meses publicados para ambos flujos en las consultas mensuales de totales y rubros, y totales anuales disponibles para las 32 entidades.
+
+Las posiciones se calcularon de mayor a menor utilizando los montos originales, antes del redondeo. Los empates comparten lugar. La categoría “No Informado” fue excluida de los rankings y los datos ausentes se conservaron como N/D.
+
+Los totales estatales y los montos por rubro provienen de consultas independientes. Sus diferencias se registraron sin sustituir los totales publicados por la suma de los rubros.
+
+**Fuente:** [DataMéxico, Secretaría de Economía](https://www.economia.gob.mx/datamexico/es/profile/geo/jalisco-jc).

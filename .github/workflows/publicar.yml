@@ -1,0 +1,107 @@
+name: Actualizar reporte y publicar sitio
+
+on:
+  # Se ejecuta solo el día 5 de cada mes (14:00 UTC)
+  schedule:
+    - cron: "0 14 5 * *"
+  # Botón "Run workflow" en la pestaña Actions
+  workflow_dispatch:
+  # Y cada vez que cambies el código o el sitio
+  push:
+    branches: [main]
+    paths:
+      - "0*.R"
+      - "R/**"
+      - "reporte_datamexico_jalisco.Rmd"
+      - "sitio/**"
+      - "DESCRIPTION"
+      - ".github/workflows/publicar.yml"
+
+permissions:
+  contents: write   # para guardar datos y reportes nuevos en el repo
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Pandoc
+        uses: r-lib/actions/setup-pandoc@v2
+
+      - name: Instalar R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Instalar paquetes de R (según DESCRIPTION)
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 1
+
+      - name: Instalar Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: 01 - Descargar datos de Data México
+        run: |
+          if Rscript 01_descarga_datos.R; then
+            echo "Descarga exitosa."
+          else
+            echo "::warning::La API de Data México falló. Se usan los datos de la última descarga exitosa."
+            git checkout -- data/raw
+          fi
+
+      - name: 02 - Limpieza
+        run: Rscript 02_limpieza_datos.R
+
+      - name: 03 - Indicadores
+        run: Rscript 03_indicadores.R
+
+      - name: 04 - Tablas y textos
+        run: Rscript 04_tablas_textos.R
+
+      - name: Generar reporte de Word
+        run: Rscript R/generar_reporte.R
+
+      - name: Guardar datos y reporte nuevos en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data reportes
+          if git diff --cached --quiet; then
+            echo "Sin cambios."
+          else
+            git commit -m "Actualizar datos y reporte [skip ci]"
+            git push
+          fi
+
+      - name: Construir el sitio
+        run: quarto render sitio
+
+      - name: Copiar los reportes al sitio
+        run: |
+          mkdir -p sitio/_site/descargas
+          cp reportes/*.docx sitio/_site/descargas/
+
+      - name: Subir el sitio
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: sitio/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publicar en GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
