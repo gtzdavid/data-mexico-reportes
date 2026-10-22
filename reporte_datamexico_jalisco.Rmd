@@ -6,8 +6,7 @@ date: "`r format(Sys.Date(), '%d/%m/%Y')`"
 lang: es
 output:
   word_document:
-    toc: true
-    toc_depth: 3
+    toc: false
     number_sections: true
 ---
 
@@ -532,6 +531,7 @@ tabla_anual_reporte <- tabla_anual |>
     Año = anio
   ) |>
   dplyr::mutate(
+    Año = as.character(.data$Año),
     dplyr::across(
       -dplyr::all_of("Año"),
       ~ formato_numero(.x)
@@ -542,6 +542,8 @@ tabla_anual_reporte <- tabla_anual |>
 # Resumen ejecutivo
 
 Este reporte analiza el comportamiento del comercio exterior de **Jalisco** y lo compara con el resultado nacional. La información fue obtenida mediante la API de DataMéxico y procesada en R para construir indicadores comparables, tablas históricas y textos que se actualizan automáticamente.
+
+Los datos utilizados corresponden a la serie mensual de DataMéxico, disponible desde **`r nombre_periodo(fecha_inicial)`**.
 
 El periodo más reciente que cuenta simultáneamente con exportaciones e importaciones para México y Jalisco es **`r nombre_periodo(periodo_reporte)`**.
 
@@ -569,86 +571,7 @@ crear_tabla_reporte(
 
 *Nota: los montos están expresados en millones de dólares estadounidenses.*
 
-```{=openxml}
-<w:p><w:r><w:br w:type="page"/></w:r></w:p>
-```
-
-# Fuente y características de los datos
-
-## Fuente de información
-
-Los datos provienen de **DataMéxico**, plataforma de la Secretaría de Economía. La información utilizada corresponde al apartado de comercio internacional neto.
-
-La consulta se realizó mediante la dirección base:
-
-<https://www.economia.gob.mx/datamexico/api/data>
-
-Para México se utilizó el identificador `Nation = mex`. Para Jalisco se utilizó `State = 14`; por lo tanto, Guadalajara no fue empleada como sustituto del estado.
-
-```{r tabla-consultas}
-crear_tabla_reporte(
-  tabla_consultas,
-  titulo = "Parámetros principales de las consultas"
-)
-```
-
-## Ficha técnica
-
-```{r tabla-ficha}
-crear_tabla_reporte(
-  tabla_ficha,
-  titulo = "Ficha técnica de la base de datos"
-)
-```
-
-## Calidad de la información
-
-Antes de realizar los cálculos se verificaron la cobertura temporal, los valores faltantes y la existencia de posibles registros duplicados.
-
-```{r tabla-calidad}
-crear_tabla_reporte(
-  tabla_calidad,
-  titulo = "Resumen de calidad por territorio"
-)
-```
-
 DataMéxico señala que los datos de comercio exterior han sido anonimizados por motivos de confidencialidad. Por ello, las cifras deben considerarse aproximaciones y pueden presentar diferencias frente a otras publicaciones estadísticas.
-
-# Preparación de los datos
-
-El procesamiento fue realizado en R mediante las siguientes etapas:
-
-1. Descarga independiente de la información nacional y estatal.
-2. Conservación de los archivos originales en `data/raw`.
-3. Homologación de los nombres de las variables.
-4. Conversión del mes a un formato de fecha.
-5. Conversión del valor comercial a una variable numérica.
-6. Clasificación de los flujos como exportaciones o importaciones.
-7. Incorporación de una variable para identificar el territorio.
-8. Revisión de fechas faltantes, montos negativos y duplicados.
-9. Unión de las bases de México y Jalisco.
-10. Construcción de una secuencia mensual completa.
-11. Selección del último periodo común entre ambos territorios.
-12. Generación de tablas y textos dinámicos.
-
-Los valores faltantes se conservaron como no disponibles; no fueron reemplazados por cero.
-
-## Indicadores calculados
-
-Los indicadores se construyeron con las siguientes expresiones:
-
-- **Cambio absoluto:** monto actual menos monto del periodo de comparación.
-- **Variación porcentual:** cambio absoluto dividido entre el monto del periodo de comparación, multiplicado por 100.
-- **Comercio total:** exportaciones más importaciones.
-- **Balance comercial:** exportaciones menos importaciones.
-- **Participación de Jalisco:** monto de Jalisco dividido entre el monto nacional, multiplicado por 100.
-
-La variable de movimiento fue asignada automáticamente:
-
-- **Aumentó:** cambio mayor que cero.
-- **Disminuyó:** cambio menor que cero.
-- **Se mantuvo sin cambio:** cambio igual a cero.
-- **Sin dato comparable:** no existe información para el periodo de comparación.
 
 ```{=openxml}
 <w:p><w:r><w:br w:type="page"/></w:r></w:p>
@@ -732,72 +655,7 @@ if (nrow(tabla_anual_reporte) > 0) {
 }
 ```
 
-```{=openxml}
-<w:p><w:r><w:br w:type="page"/></w:r></w:p>
-```
-
-# Interpretación de los resultados
-
-## Comportamiento de Jalisco
-
-`r obtener_texto("jalisco_exportaciones")`
-
-`r obtener_texto("participacion_exportaciones")`
-
-`r obtener_texto("jalisco_importaciones")`
-
-`r obtener_texto("participacion_importaciones")`
-
-## Balance comercial
-
-`r obtener_texto("balance_jalisco")`
-
-`r obtener_texto("balance_mexico")`
-
-Un superávit significa que las exportaciones fueron mayores que las importaciones. Un déficit representa la situación contraria. Este resultado describe únicamente la diferencia entre ambos flujos y no determina, por sí solo, el desempeño general de la economía.
-
-# Conclusiones
-
-El análisis permite comparar el comercio exterior de Jalisco con el resultado nacional mediante una misma estructura de datos. La periodicidad mensual facilita la identificación de cambios recientes, mientras que la variación anual ofrece una comparación más apropiada frente a posibles efectos estacionales.
-
-Los textos del reporte dependen directamente de los indicadores calculados. En consecuencia, expresiones como **aumentó**, **disminuyó**, **superávit** o **déficit** cambiarán automáticamente cuando se actualicen los datos.
-
-La participación de Jalisco permite dimensionar la importancia relativa del estado dentro del comercio exterior nacional. Sin embargo, los resultados deben interpretarse considerando la anonimización señalada por DataMéxico y sin atribuir causalidad a los cambios observados.
-
-# Limitaciones
-
-- Las cifras están sujetas al proceso de anonimización de DataMéxico.
-- Los datos faltantes no se interpretan como ausencia de comercio.
-- El reporte selecciona el último mes completo para ambos territorios.
-- Las variaciones describen cambios, pero no explican sus causas.
-- No se realizaron ajustes por inflación o tipo de cambio.
-- Los resultados dependen de la disponibilidad y actualización de la API.
-
-# Reproducibilidad
-
-El proyecto puede actualizarse ejecutando los archivos en el siguiente orden:
-
-1. `00_configuracion.R`
-2. `R/01_descarga_datos.R`
-3. `R/02_limpieza_datos.R`
-4. `R/03_indicadores.R`
-5. `R/04_tablas_textos.R`
-6. `reporte_datamexico_jalisco.Rmd`
-
-# Posibles ampliaciones
-
-Con los datos actuales todavía podemos agregar una tabla con todos los meses históricos o seleccionar un periodo distinto. También es posible incorporar:
-
-- Principales productos exportados e importados.
-- Principales destinos de exportación.
-- Principales países de origen de las importaciones.
-- Comparación de Jalisco con otras entidades federativas.
-- Participaciones anuales.
-- Pronósticos de series de tiempo.
-
-Estas ampliaciones requieren consultas adicionales para evitar mezclar los totales mensuales con desagregaciones por producto o país.
-
-# Referencia
+# Referencia {-}
 
 DataMéxico. Secretaría de Economía. *Perfil económico de México y comercio exterior*.  
 <https://www.economia.gob.mx/datamexico/es/profile/geo/mexico>

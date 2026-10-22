@@ -12,7 +12,7 @@ on:
     paths:
       - "0*.R"
       - "R/**"
-      - "ficha_datamexico_jalisco.Rmd"
+      - "reporte_datamexico_jalisco.Rmd"
       - "sitio/**"
       - "DESCRIPTION"
       - ".github/workflows/publicar.yml"
