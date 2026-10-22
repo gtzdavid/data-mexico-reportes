@@ -8,7 +8,7 @@ subtitle: "Exportaciones e importaciones · comparación estatal y nacional"
 meses <- c("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
            "agosto", "septiembre", "octubre", "noviembre", "diciembre")
 
-dir_reportes <- here::here("reportes")
+dir_reportes <- file.path("..", "reportes")
 
 archivos <- sort(
   list.files(
