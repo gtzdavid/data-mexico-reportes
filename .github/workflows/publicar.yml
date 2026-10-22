@@ -79,6 +79,7 @@ jobs:
             echo "Sin cambios."
           else
             git commit -m "Actualizar datos y reporte [skip ci]"
+            git pull --rebase -X theirs origin main
             git push
           fi
 
