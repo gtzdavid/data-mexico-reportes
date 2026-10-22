@@ -13,7 +13,7 @@ Pipeline en R que descarga datos de la API de DataMéxico, calcula indicadores y
 
 - `reportes/` guarda un `.docx` por periodo (`reporte_datamexico_jalisco_2026-06.docx`). La página muestra el más reciente y el historial.
 - Si la API falla, el workflow usa los datos de la última descarga exitosa (quedan guardados en `data/raw`).
-- Solo el reporte de Word es descargable. La ficha (`ficha_datamexico_jalisco.Rmd`) no se ejecuta ni se publica.
+- El reporte de Word se genera desde `ficha_datamexico_jalisco.Rmd` (versión breve) y es lo único descargable. `reporte_datamexico_jalisco.Rmd` (versión larga) ya no se usa.
 
 ## Puesta en marcha (una sola vez)
 
@@ -45,5 +45,5 @@ Los enlaces de descarga solo funcionan en el sitio publicado (el workflow copia 
 
 ## Pendientes conocidos
 
-- `R05_ranking_entidades.R` está vacío en el proyecto. El dashboard usa `data/processed/ranking_entidades.csv` (año 2025) tal como está, sin actualizarlo.
+- `R05_ranking_entidades.R` está vacío en el proyecto. La ficha y el dashboard usan los `ranking_*.csv` de `data/processed` (año 2025) tal como están, sin actualizarlos.
 - Para agregar paquetes nuevos, añádelos a `DESCRIPTION` (sección `Imports`).

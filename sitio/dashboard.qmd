@@ -7,7 +7,7 @@ subtitle: "Comercio exterior de Jalisco: lo más importante"
 #| label: datos
 leer <- function(archivo) {
   readr::read_csv(
-    here::here("data", "processed", archivo),
+    file.path("..", "data", "processed", archivo),
     show_col_types = FALSE,
     progress = FALSE
   )
@@ -169,4 +169,4 @@ plotly::plot_ly(
   )
 ```
 
-<p class="nota">Datos anuales de <strong>`r anio_rank`</strong>. Jalisco aparece resaltado. Este ranking no se actualiza con el flujo mensual; se actualiza cuando vuelvas a generar `ranking_entidades.csv`.</p>
+<p class="nota">Datos anuales de <strong>`r anio_rank`</strong>. Jalisco aparece resaltado. Este ranking no se actualiza con el flujo mensual.</p>

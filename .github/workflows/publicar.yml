@@ -12,7 +12,7 @@ on:
     paths:
       - "0*.R"
       - "R/**"
-      - "reporte_datamexico_jalisco.Rmd"
+      - "ficha_datamexico_jalisco.Rmd"
       - "sitio/**"
       - "DESCRIPTION"
       - ".github/workflows/publicar.yml"
@@ -79,6 +79,7 @@ jobs:
             echo "Sin cambios."
           else
             git commit -m "Actualizar datos y reporte [skip ci]"
+            git pull --rebase -X theirs origin main
             git push
           fi
 
